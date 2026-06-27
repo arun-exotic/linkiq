@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique
+  password      String
+  name          String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  links         Link[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Link {
+  id          String    @id @default(uuid()) @db.Uuid
+  slug        String    @unique
+  destination String
+  title       String?
+  expiresAt   DateTime? @map("expires_at")
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  userId      String    @map("user_id") @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicks      Click[]
+
+  @@index([slug])
+  @@index([userId])
+  @@map("links")
+}
+
+model Click {
+  id         BigInt   @id @default(autoincrement())
+  linkId     String   @map("link_id") @db.Uuid
+  link       Link     @relation(fields: [linkId], references: [id])
+  clickedAt  DateTime @default(now()) @map("clicked_at")
+  ipHash     String?  @map("ip_hash")
+  country    String?
+  city       String?
+  userAgent  String?  @map("user_agent")
+  referer    String?
+  deviceType String?  @map("device_type")
+
+  @@index([linkId, clickedAt(sort: Desc)])
+  @@map("clicks")
+}
