@@ -1,9 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { QUEUES } from '@app/queue';
+import { CONCURRENCY } from '../queue.config';
 import { ClicksService } from './clicks.service';
 
-@Processor('click-events', { concurrency: 5 })
+@Processor(QUEUES.CLICK_EVENTS, { concurrency: CONCURRENCY.CLICK_EVENTS })
 export class ClicksProcessor extends WorkerHost {
   private readonly logger = new Logger(ClicksProcessor.name);
 

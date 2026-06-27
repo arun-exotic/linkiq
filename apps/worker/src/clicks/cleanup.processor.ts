@@ -1,18 +1,42 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { CacheService } from '@app/cache';
 import { PrismaService } from '@app/prisma';
-import { Job } from 'bullmq';
+import { Job, Queue } from 'bullmq';
+import { QUEUES } from '@app/queue';
+import { CLEANUP_SCHEDULE, CONCURRENCY } from '../queue.config';
 
-@Processor('cleanup')
-export class CleanupProcessor extends WorkerHost {
+@Processor(QUEUES.CLEANUP, { concurrency: CONCURRENCY.CLEANUP })
+export class CleanupProcessor
+  extends WorkerHost
+  implements OnApplicationBootstrap
+{
   private readonly logger = new Logger(CleanupProcessor.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @InjectQueue(QUEUES.CLEANUP) private readonly cleanupQueue: Queue,
   ) {
     super();
+  }
+
+  async onApplicationBootstrap() {
+    try {
+      await this.cleanupQueue.add(
+        'cleanup-expired-slugs',
+        {},
+        CLEANUP_SCHEDULE.EXPIRED_SLUGS,
+      );
+      await this.cleanupQueue.add(
+        'cleanup-refresh-tokens',
+        {},
+        CLEANUP_SCHEDULE.REFRESH_TOKENS,
+      );
+      this.logger.log('Registered repeatable cleanup jobs');
+    } catch (err) {
+      this.logger.error('Failed to register cleanup jobs', err);
+    }
   }
 
   async process(job: Job) {

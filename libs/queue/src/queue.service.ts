@@ -1,10 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { QUEUES } from './queue.constants';
 
 export interface ClickPayload {
   linkId: string;
@@ -16,12 +13,9 @@ export interface ClickPayload {
 }
 
 @Injectable()
-export class QueueService implements OnApplicationBootstrap {
-  private readonly logger = new Logger(QueueService.name);
-
+export class QueueService {
   constructor(
-    @InjectQueue('click-events') private readonly clickQueue: Queue,
-    @InjectQueue('cleanup') private readonly cleanupQueue: Queue,
+    @InjectQueue(QUEUES.CLICK_EVENTS) private readonly clickQueue: Queue,
   ) {}
 
   async enqueueClick(payload: ClickPayload) {
@@ -31,28 +25,5 @@ export class QueueService implements OnApplicationBootstrap {
       removeOnComplete: 100,
       removeOnFail: 500,
     });
-  }
-
-  async onApplicationBootstrap() {
-    try {
-      await this.cleanupQueue.add(
-        'cleanup-expired-slugs',
-        {},
-        {
-          repeat: { pattern: '0 2 * * *' },
-          jobId: 'cleanup-expired-slugs',
-        },
-      );
-      await this.cleanupQueue.add(
-        'cleanup-refresh-tokens',
-        {},
-        {
-          repeat: { pattern: '0 3 * * *' },
-          jobId: 'cleanup-refresh-tokens',
-        },
-      );
-    } catch (err) {
-      this.logger.error('Failed to register cleanup jobs', err);
-    }
   }
 }
