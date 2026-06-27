@@ -8,9 +8,9 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { CurrentUser, RateLimitGuard } from '@app/common';
+import { CurrentUser, RateLimitGuard, ZodValidationPipe } from '@app/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CreateLinkDto } from './dto/create-link.dto';
+import { CreateLinkDto, CreateLinkSchema } from './dto/create-link.dto';
 import { LinksService } from './links.service';
 
 @Controller('links')
@@ -22,7 +22,7 @@ export class LinksController {
   @UseGuards(RateLimitGuard)
   @HttpCode(201)
   create(
-    @Body() dto: CreateLinkDto,
+    @Body(new ZodValidationPipe(CreateLinkSchema)) dto: CreateLinkDto,
     @CurrentUser() user: { id: string },
   ) {
     return this.linksService.create(dto, user.id);

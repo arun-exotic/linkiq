@@ -7,9 +7,9 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { CurrentUser } from '@app/common';
+import { CurrentUser, ZodValidationPipe } from '@app/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto, RegisterSchema } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 
@@ -19,7 +19,9 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(201)
-  register(@Body() dto: RegisterDto) {
+  register(
+    @Body(new ZodValidationPipe(RegisterSchema)) dto: RegisterDto,
+  ) {
     return this.authService.register(dto);
   }
 

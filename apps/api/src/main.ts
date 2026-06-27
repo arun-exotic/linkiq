@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { HttpExceptionFilter, LoggingInterceptor } from '@app/common';
@@ -23,14 +22,6 @@ async function bootstrap() {
   app.setGlobalPrefix('v1', {
     exclude: ['/:slug', '/health'],
   });
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
 
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
