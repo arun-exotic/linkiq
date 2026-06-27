@@ -7,7 +7,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "prisma:generate": "prisma --config libs/prisma/prisma.config.ts generate",
-    "prisma:reset": "prisma --config libs/prisma/prisma.config.ts migrate reset --force",
+    "prisma:migrate:dev": "prisma --config libs/prisma/prisma.config.ts migrate dev",
+    "prisma:migrate:deploy": "prisma --config libs/prisma/prisma.config.ts migrate deploy",
+    "prisma:reset": "prisma --config libs/prisma/prisma.config.ts migrate reset --force && prisma --config libs/prisma/prisma.config.ts generate",
     "build": "nest build api",
     "build:worker": "nest build worker",
     "start:dev": "nest start api --watch",

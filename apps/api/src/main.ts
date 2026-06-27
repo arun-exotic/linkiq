@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
 import { HttpExceptionFilter, LoggingInterceptor } from '@app/common';
 import { AppModule } from './app.module';
 
@@ -19,13 +20,13 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('v1', {
-    exclude: ['/:slug', '/health'],
-  });
+
 
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  await app.listen(config.get<number>('app.port')!);
+  const port = config.get<number>('app.port')!;
+  await app.listen(port);
+  Logger.log(`Server running on http://localhost:${port}`, 'Bootstrap');
 }
 bootstrap();
