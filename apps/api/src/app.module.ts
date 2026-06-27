@@ -1,6 +1,8 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CacheModule } from '@app/cache';
+import { ConfigModule } from '@app/config';
 import { PrismaModule } from '@app/prisma';
 import { QueueModule } from '@app/queue';
 import { AuthModule } from './auth/auth.module';
@@ -11,13 +13,17 @@ import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
+    ConfigModule,
     PrismaModule,
     CacheModule,
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      },
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('redis.host')!,
+          port: config.get<number>('redis.port')!,
+        },
+      }),
     }),
     UsersModule,
     AuthModule,

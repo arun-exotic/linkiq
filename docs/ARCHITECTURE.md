@@ -1,7 +1,7 @@
 # LinkIQ Architecture
 
 > **Stack:** NestJS 11 · PostgreSQL · Redis · Prisma ORM 7 · BullMQ 5  
-> **Monorepo:** NestJS CLI (not Nx) — 2 apps, 4 shared libs  
+> **Monorepo:** NestJS CLI (not Nx) — 2 apps, 5 shared libs  
 > **Deployment target:** GCP Cloud Run + Cloud SQL + Memorystore  
 > **Status:** Phase 1 code complete (~90%). Missing: Prisma migrations, Dockerfile, GCP deploy, tests.
 
@@ -21,6 +21,7 @@ Defines 6 projects:
 | `cache` | Library | `libs/cache` | `index` |
 | `common` | Library | `libs/common` | `index` |
 | `queue` | Library | `libs/queue` | `index` |
+| `config` | Library | `libs/config` | `index` |
 
 Build uses `tsc` (not webpack). Output to `dist/`.
 
@@ -47,6 +48,7 @@ Path aliases (all prefixed with `./` since `baseUrl` is absent):
 | `@app/cache` | `./libs/cache/src` |
 | `@app/common` | `./libs/common/src` |
 | `@app/queue` | `./libs/queue/src` |
+| `@app/config` | `./libs/config/src` |
 
 ### 1.3 Package Scripts
 
@@ -131,6 +133,14 @@ linkiq/
 │   │       ├── queue.constants.ts       # QUEUES = { CLICK_EVENTS, CLEANUP }
 │   │       ├── queue.module.ts          # Registers click-events queue
 │   │       └── queue.service.ts         # enqueueClick producer
+│   ├── config/                         # Typed configuration (Global)
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── config.module.ts         # @Global(), loadConfig() with Joi
+│   │       ├── app.config.ts            # APP_PORT, NODE_ENV, APP_BASE_URL, CORS_ORIGIN
+│   │       ├── auth.config.ts           # JWT_SECRET, DAILY_SALT
+│   │       ├── database.config.ts       # DATABASE_URL
+│   │       └── redis.config.ts          # REDIS_HOST, REDIS_PORT
 │   └── common/                         # Shared utilities
 │       └── src/
 │           ├── index.ts
@@ -171,8 +181,11 @@ HTTP server at `APP_PORT` (default 3000). Handles all public and authenticated r
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
-  app.enableCors({ origin: CORS_ORIGIN, credentials: true });
+  app.enableShutdownHooks();
+
+  app.enableCors({ origin: config.get('app.corsOrigin'), credentials: true });
   app.setGlobalPrefix('v1', { exclude: ['/:slug', '/health'] });
 
   app.useGlobalPipes(new ValidationPipe({
@@ -184,7 +197,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  await app.listen(process.env.APP_PORT ?? 3000);
+  await app.listen(config.get('app.port'));
 }
 ```
 
@@ -192,9 +205,10 @@ async function bootstrap() {
 
 ```
 AppModule
+ ├── ConfigModule (@Global)          → ConfigService (@nestjs/config + Joi)
  ├── PrismaModule (@Global)          → PrismaService
  ├── CacheModule  (@Global)          → CacheService (Redis)
- ├── BullModule.forRoot              → BullMQ connection (Redis)
+ ├── BullModule.forRootAsync         → BullMQ connection (Redis via ConfigService)
  ├── UsersModule                     → UsersService
  │    (no imports)
  ├── AuthModule                      → AuthService, JwtStrategy, LocalStrategy
@@ -390,17 +404,20 @@ Headless NestJS application context — no HTTP listener. Runs BullMQ workers fo
 
 ```typescript
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(WorkerModule);
-  await app.init();
+  const logger = new Logger('WorkerBootstrap');
+  const app = await NestFactory.createApplicationContext(WorkerModule, { logger });
+
+  app.enableShutdownHooks();
+
+  logger.log('Worker started');
 }
 ```
-
-**Known gap:** No graceful shutdown handler. `app.enableShutdownHooks()` not called.
 
 #### 3.2.2 Module Graph
 
 ```
 WorkerModule
+ ├── ConfigModule (@Global)
  ├── PrismaModule (@Global)
  ├── CacheModule  (@Global)
  ├── BullModule.forRoot              connection from queue.config.ts
@@ -508,8 +525,10 @@ Uses **Prisma driver adapter** (`@prisma/adapter-pg`), not the binary engine. Th
 @Module({ providers: [PrismaService], exports: [PrismaService] })
 
 // PrismaService
-const adapter = new PrismaPg(process.env.DATABASE_URL!);
-super({ adapter });
+constructor(config: ConfigService) {
+  const adapter = new PrismaPg(config.get<string>('database.url')!);
+  super({ adapter });
+}
 ```
 
 **Schema** at `libs/prisma/schema.prisma` — 4 models mapped to snake_case via `@@map`:
@@ -583,7 +602,7 @@ CacheService
  └── .setNX(key, val, ttlSec) → Promise<boolean>
 ```
 
-Connection from `REDIS_HOST` / `REDIS_PORT`. `maxRetriesPerRequest: 3`. Errors are logged, never thrown. Graceful shutdown via `OnModuleDestroy` (`.quit()`).
+Connection from `ConfigService` (`redis.host`, `redis.port`). `maxRetriesPerRequest: 3`. Errors are logged, never thrown. Graceful shutdown via `OnModuleDestroy` (`.quit()`).
 
 ### 4.3 Queue (`@app/queue`)
 
@@ -611,7 +630,45 @@ async enqueueClick(payload: ClickPayload) {
 
 Queue registration is idempotent — both API and worker register the same queues. The worker applies `defaultJobOptions`; the API just declares existence.
 
-### 4.4 Common (`@app/common`)
+### 4.4 Config (`@app/config`) — `@Global()`
+
+Typed configuration layer using `@nestjs/config` + `joi` validation.
+
+```typescript
+@Global()
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      cache: true,                         // Cache config for faster lookups
+      validationSchema: Joi.object({ … }), // Enforced at bootstrap
+      validationOptions: { abortEarly: true },
+    }),
+  ],
+  exports: [ConfigService],
+})
+export class AppConfigModule {}
+```
+
+**Config files** (each exports a Joi schema for its domain):
+
+| Config | Keys | Defaults |
+|---|---|---|
+| `app.config.ts` | `app.port`, `app.nodeEnv`, `app.baseUrl`, `app.corsOrigin` | `3000`, `development`, `''`, `''` |
+| `auth.config.ts` | `auth.jwtSecret`, `auth.dailySalt` | `''` (required) |
+| `database.config.ts` | `database.url` | `''` (required) |
+| `redis.config.ts` | `redis.host`, `redis.port` | `localhost`, `6379` |
+
+Usage:
+```typescript
+constructor(private readonly config: ConfigService) {
+  const secret = this.config.get<string>('auth.jwtSecret')!;
+  const port   = this.config.get<number>('app.port')!;
+}
+```
+
+Only the config files themselves reference `process.env` — all consumers inject `ConfigService`.
+
+### 4.5 Common (`@app/common`)
 
 Not `@Global()`. Imported explicitly where needed.
 
@@ -929,17 +986,19 @@ Response: 200 { "status": "ok", "info": { "postgres": { "status": "up" }, "redis
 
 ## 8. Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `APP_PORT` | No | `3000` | API HTTP listen port |
-| `NODE_ENV` | No | `development` | Environment |
-| `APP_BASE_URL` | Yes | — | Base for short URLs (e.g. `https://lnkiq.io`) |
-| `CORS_ORIGIN` | Yes | — | Allowed CORS origin (e.g. `https://app.lnkiq.io`) |
-| `DATABASE_URL` | Yes | — | Postgres connection string (include `?connection_limit=10`) |
-| `REDIS_HOST` | No | `localhost` | Redis host |
-| `REDIS_PORT` | No | `6379` | Redis port |
-| `JWT_SECRET` | Yes | — | HMAC secret for access token JWTs |
-| `DAILY_SALT` | Yes | — | Salt for IP hashing (rotate daily in production) |
+All env vars are read through `@app/config` (typed, Joi-validated). Consumers inject `ConfigService` — no direct `process.env` outside the config library.
+
+| Variable | Required | Default | Config Key | Description |
+|---|---|---|---|---|
+| `APP_PORT` | No | `3000` | `app.port` | API HTTP listen port |
+| `NODE_ENV` | No | `development` | `app.nodeEnv` | Environment |
+| `APP_BASE_URL` | Yes | — | `app.baseUrl` | Base for short URLs (e.g. `https://lnkiq.io`) |
+| `CORS_ORIGIN` | Yes | — | `app.corsOrigin` | Allowed CORS origin (e.g. `https://app.lnkiq.io`) |
+| `DATABASE_URL` | Yes | — | `database.url` | Postgres connection string (include `?connection_limit=10`) |
+| `REDIS_HOST` | No | `localhost` | `redis.host` | Redis host |
+| `REDIS_PORT` | No | `6379` | `redis.port` | Redis port |
+| `JWT_SECRET` | Yes | — | `auth.jwtSecret` | HMAC secret for access token JWTs |
+| `DAILY_SALT` | Yes | — | `auth.dailySalt` | Salt for IP hashing (rotate daily in production) |
 
 ---
 
@@ -1020,5 +1079,4 @@ The redirect response (`302`) is sent to the client before any analytics work be
 | `GET /auth/me` | Returns `{ id, email }` from JWT only | Should query DB for `{ id, email, name, createdAt }` |
 | Stack trace leakage | `HttpExceptionFilter` shows details | Should hide stack in `NODE_ENV=production` |
 | Pino structured logging | Installed but unused; custom `LoggingInterceptor` with `Logger.log` | Should replace with `nestjs-pino` for JSON logs |
-| Worker graceful shutdown | No `enableShutdownHooks()` | Should drain BullMQ before exiting |
 | Midnight salt dedup limit | Undocumented minor overcount | Should be documented |

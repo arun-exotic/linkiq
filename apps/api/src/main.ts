@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { HttpExceptionFilter, LoggingInterceptor } from '@app/common';
 import { AppModule } from './app.module';
@@ -10,9 +11,12 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
+
+  app.enableShutdownHooks();
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN,
+    origin: config.get<string>('app.corsOrigin'),
     credentials: true,
   });
 
@@ -31,6 +35,6 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  await app.listen(process.env.APP_PORT ?? 3000);
+  await app.listen(config.get<number>('app.port')!);
 }
 bootstrap();

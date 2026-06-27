@@ -18,6 +18,8 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
+      "@app/config": ["./libs/config/src"],
+      "@app/config/*": ["./libs/config/src/*"],
       "@app/prisma": ["./libs/prisma/src"],
       "@app/prisma/*": ["./libs/prisma/src/*"],
       "@app/cache": ["./libs/cache/src"],
@@ -27,5 +29,6 @@
       "@app/queue": ["./libs/queue/src"],
       "@app/queue/*": ["./libs/queue/src/*"]
     }
-  }
+  },
+  "exclude": ["test", "node_modules", "dist"]
 }

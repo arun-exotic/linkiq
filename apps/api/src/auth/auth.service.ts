@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@app/prisma';
 import * as bcrypt from 'bcrypt';
@@ -16,6 +17,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   async validateUser(email: string, password: string) {
@@ -67,7 +69,7 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email };
 
     const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET,
+      secret: this.config.get<string>('auth.jwtSecret')!,
       expiresIn: '15m',
     });
 

@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CacheService } from '@app/cache';
 import { generateSlug, isReserved } from '@app/common';
 import { CreateLinkDto } from './dto/create-link.dto';
@@ -15,6 +16,7 @@ export class LinksService {
   constructor(
     private readonly linksRepository: LinksRepository,
     private readonly cache: CacheService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(dto: CreateLinkDto, userId: string) {
@@ -42,7 +44,7 @@ export class LinksService {
         await this.cache.set(`slug:${slug}`, JSON.stringify(link), 86400);
         return {
           ...link,
-          shortUrl: `${process.env.APP_BASE_URL}/${link.slug}`,
+          shortUrl: `${this.config.get<string>('app.baseUrl')}/${link.slug}`,
         };
       } catch (err: unknown) {
         const prismaErr = err as { code?: string };
@@ -61,7 +63,7 @@ export class LinksService {
     return links.map((link) => ({
       ...link,
       clickCount: link._count.clicks,
-      shortUrl: `${process.env.APP_BASE_URL}/${link.slug}`,
+      shortUrl: `${this.config.get<string>('app.baseUrl')}/${link.slug}`,
     }));
   }
 
